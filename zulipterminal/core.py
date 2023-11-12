@@ -626,8 +626,12 @@ class Controller:
 
     def deregister_client(self) -> None:
         queue_id = self.model.queue_id
-        self.client.deregister(queue_id, 1.0)
-        sys.exit(0)
+
+        ###### check here
+        try:
+            self.client.deregister(queue_id, 1.0)
+        finally:
+            sys.exit(0)
 
     def no_prompt_exit_handler(self, signum: int, frame: Any) -> None:
         self.deregister_client()

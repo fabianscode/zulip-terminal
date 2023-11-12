@@ -3,6 +3,7 @@ Defines the `Model`, fetching and storing data retrieved from the Zulip server
 """
 
 import itertools
+import sys
 import json
 import time
 from collections import defaultdict
@@ -24,6 +25,7 @@ from typing import (
     cast,
 )
 from urllib.parse import urlparse
+from pyperclip import subprocess
 
 import zulip
 from bs4 import BeautifulSoup
@@ -414,15 +416,21 @@ class Model:
         )
 
     def _notify_server_of_presence(self) -> Dict[str, Any]:
-        response = self.client.update_presence(
-            request={
-                # TODO: Determine `status` from terminal tab focus.
-                "status": "active" if self.new_user_input else "idle",
-                "new_user_input": self.new_user_input,
-            }
-        )
-        self.new_user_input = False
-        return response
+        # check here
+        # if presence update is unsuccessful, just ignore until the next update
+        try:
+            response = self.client.update_presence(
+                request={
+                    # TODO: Determine `status` from terminal tab focus.
+                    "status": "active" if self.new_user_input else "idle",
+                    "new_user_input": self.new_user_input,
+                }
+            )
+            self.new_user_input = False
+            return response
+        except Exception as e:
+            subprocess.run(["notify-send", '"' + str(type(e)) + '"'])
+            return { "result": "failure" }
 
     @asynch
     def _start_presence_updates(self) -> None:
@@ -441,7 +449,7 @@ class Model:
                     view = self.controller.view
                     view.users_view.update_user_list(user_list=self.users)
                     view.middle_column.update_message_list_status_markers()
-            time.sleep(60)
+            time.sleep(5)
 
     @asynch
     def toggle_message_reaction(
@@ -750,7 +758,13 @@ class Model:
             "client_gravatar": True,
             "narrow": json.dumps(self.narrow),
         }
-        response = self.client.get_messages(message_filters=request)
+
+        try:
+            response = self.client.get_messages(message_filters=request)
+        except Exception:
+            sys.stdout.write("\033[92mInternet connection lost\033[0m\n")
+            response = { "result": "failure" }
+
         if response["result"] == "success":
             response["messages"] = [
                 self.modernize_message_response(msg) for msg in response["messages"]
@@ -772,6 +786,9 @@ class Model:
             self._have_last_message[narrow_str] = had_last_msg or just_found_last_msg
 
             return ""
+
+        sys.exit(0)
+
         display_error_if_present(response, self.controller)
         return response["msg"]
 
@@ -2041,9 +2058,15 @@ class Model:
                         break
                     time.sleep(reregister_timeout)
 
-            response = self.client.get_events(
-                queue_id=queue_id, last_event_id=last_event_id
-            )
+            # check here
+            # when get_events() is unable to fetch (probably due to lost
+            # internet connection), just wait until it works again
+            try:
+                response = self.client.get_events(
+                    queue_id=queue_id, last_event_id=last_event_id
+                )
+            except Exception:
+                continue
 
             if "error" in response["result"]:
                 if response.get("code") == "BAD_EVENT_QUEUE_ID":
