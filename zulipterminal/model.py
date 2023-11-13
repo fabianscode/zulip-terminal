@@ -6,6 +6,7 @@ import itertools
 import sys
 import json
 import time
+import subprocess
 from collections import defaultdict
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from copy import deepcopy
@@ -428,8 +429,7 @@ class Model:
             )
             self.new_user_input = False
             return response
-        except Exception as e:
-            subprocess.run(["notify-send", '"' + str(type(e)) + '"'])
+        except Exception:
             return { "result": "failure" }
 
     @asynch
@@ -533,8 +533,13 @@ class Model:
             return
         if recipient_user_ids:
             request: DirectTypingNotification = {"to": recipient_user_ids, "op": status}
-            response = self.client.set_typing_status(request)
-            display_error_if_present(response, self.controller)
+
+            try:
+                response = self.client.set_typing_status(request)
+                display_error_if_present(response, self.controller)
+            except Exception:
+                subprocess.run(["notify-send", '"' + \
+                        'No internet connection available' + '"'])
         else:
             raise RuntimeError("Empty recipient list.")
 
